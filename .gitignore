@@ -31,3 +31,5 @@ __pycache__/
 # Development Scratchpads
 /**/scratch
 /**/scratch_*
+*.log
+*.tar.gz
