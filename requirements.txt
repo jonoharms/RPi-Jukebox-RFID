@@ -41,3 +41,7 @@ pydoc-markdown
 
 # MQTT
 paho-mqtt
+
+# my plugins
+hid==1.0.8
+#luma.oled
