@@ -13,7 +13,7 @@ import jukebox.cfghandler
 import jukebox.playlistgenerator as playlistgenerator
 
 from mpd.asyncio import MPDClient
-from components.player.backends import BackendPlayer
+from components.player.backends import BackendPlayer, auto_update_status
 from components.player.core.coverart_cache_manager import CoverartCacheManager
 from jukebox import publishing
 
@@ -33,9 +33,10 @@ def sanitize(path: str):
 
 class MPDBackend(BackendPlayer):
 
-    def __init__(self, event_loop):
+    def __init__(self, event_loop, player_status):
         self.client = MPDClient()
         self.loop = event_loop
+        self.player_status = player_status
         self.host = cfg.setndefault('playermpd', 'host', value='localhost')
         self.port = cfg.setndefault('playermpd', 'port', value='6600')
         self.coverart_cache_manager = CoverartCacheManager()
@@ -94,13 +95,42 @@ class MPDBackend(BackendPlayer):
         async for subsystem in self.client.idle():
             # logger.debug("MPD: Idle change in", subsystem)
             s = await self.client.status()
+            c = await self.client.currentsong()
             # logger.debug(f"MPD: New Status: {s.result()}")
             # print(f"MPD: New Status: {type(s)} // {s}")
             # Now, do something with it ...
-            publishing.get_publisher().send('playerstatus', s)
+            # publishing.get_publisher().send('playerstatus', s)
+            self._update_player_status(s, c)
 
     async def _status(self):
         return await self.client.status()
+
+    async def _currentsong(self):
+        return await self.client.currentsong()
+
+    def update_status(self):
+        """Trigger a status update and refresh the PlayerStatus"""
+        s = asyncio.run_coroutine_threadsafe(self._status(), self.loop).result()
+        c = asyncio.run_coroutine_threadsafe(self._currentsong(), self.loop).result()
+        self._update_player_status(s, c)
+
+    def _update_player_status(self, mpd_status, mpd_currentsong):
+        # Map MPD status to PlayerStatus
+        status_map = {
+            'album': mpd_currentsong.get('album', ''),
+            'albumartist': mpd_currentsong.get('albumartist', ''),
+            'artist': mpd_currentsong.get('artist', ''),
+            'duration': float(mpd_status.get('duration') or 0),
+            'elapsed': float(mpd_status.get('elapsed') or 0),
+            'file': mpd_currentsong.get('file', ''),
+            'playing': mpd_status.get('state') == 'play',
+            'shuffle': mpd_status.get('random') == '1',
+            'repeat': int(mpd_status.get('repeat', 0)),
+            'single': mpd_status.get('single') == '1',
+            'title': mpd_currentsong.get('title', ''),
+            'trackid': mpd_currentsong.get('id', ''),
+        }
+        self.player_status.update(**status_map)
 
     @plugin.tag
     def status(self):
@@ -110,22 +140,21 @@ class MPDBackend(BackendPlayer):
         # 'playlist': '94', 'playlistlength': '22', 'mixrampdb': '0.000000', 'state': 'play', 'song': '0',
         # 'songid': '71', 'time': '1:126', 'elapsed': '1.108', 'bitrate': '96', 'duration': '125.988',
         # 'audio': '44100:24:2', 'nextsong': '1', 'nextsongid': '72'}
-        f = asyncio.run_coroutine_threadsafe(self._status(), self.loop).result()
-        # print(f"Status: {f}")
-        # Put it into unified structure and notify global player control
-        # ToDo: propagate to core player
-        # publishing.get_publisher().send('playerstatus', f)
-        return f
+        self.update_status()
+        return self.player_status.status()
 
     # -----------------------------------------------------
     # Stuff that controls current playback (i.e. moves around in the current playlist, termed "the queue")
 
+    @auto_update_status
     def next(self):
         return self._run_cmd(self.client.next)
 
+    @auto_update_status
     def prev(self):
         return self._run_cmd(self.client.previous)
 
+    @auto_update_status
     def play(self, idx=None):
         """
         If idx /= None, start playing song idx from queue
@@ -154,19 +183,34 @@ class MPDBackend(BackendPlayer):
     def play_album(self, albumartist, album):
         pass
 
+    @auto_update_status
     def toggle(self):
         """Toggle between playback / pause"""
         return self._run_cmd(self.client.pause)
 
-    def shuffle(self):
-        pass
+    @auto_update_status
+    def shuffle(self, option: str = 'toggle'):
+        if option == 'toggle':
+            s = self._run_cmd(self.client.status)
+            new_state = 1 if s.get('random') == '0' else 0
+            return self._run_cmd(self.client.random, new_state)
+        else:
+            return self._run_cmd(self.client.random, 1 if option else 0)
 
-    def repeat(self):
-        pass
+    @auto_update_status
+    def repeat(self, option: str = 'toggle'):
+        if option == 'toggle':
+            s = self._run_cmd(self.client.status)
+            new_state = 1 if s.get('repeat') == '0' else 0
+            return self._run_cmd(self.client.repeat, new_state)
+        else:
+            return self._run_cmd(self.client.repeat, 1 if option else 0)
 
-    def seek(self):
-        pass
+    @auto_update_status
+    def seek(self, new_time):
+        return self._run_cmd(self.client.seekcur, new_time)
 
+    @auto_update_status
     def pause(self):
         """Pause playback if playing
 
@@ -175,6 +219,7 @@ class MPDBackend(BackendPlayer):
         """
         return self._run_cmd(self.client.pause, 1)
 
+    @auto_update_status
     def stop(self):
         return self._run_cmd(self.client.stop)
 
@@ -195,6 +240,7 @@ class MPDBackend(BackendPlayer):
     # ----------------------------------
     # Stuff that replaces the current playlist and starts a new playback for URI
 
+    @auto_update_status
     def play_uri(self, uri: str, **kwargs):
         """Decode URI and forward play call
 

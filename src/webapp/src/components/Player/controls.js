@@ -42,11 +42,11 @@ const Controls = () => {
   useEffect(() => {
     setState({
       ...state,
-      isPlaying: playerstatus?.state === 'play' ? true : false,
-      songIsScheduled: playerstatus?.songid ? true : false,
-      isShuffle: playerstatus?.random === '1' ? true : false,
-      isRepeat: playerstatus?.repeat === '1' ? true : false,
-      isSingle: playerstatus?.single === '1' ? true : false,
+      isPlaying: playerstatus?.playing,
+      songIsScheduled: playerstatus?.trackid ? true : false,
+      isShuffle: playerstatus?.shuffle,
+      isRepeat: playerstatus?.repeat === 1,
+      isSingle: playerstatus?.single,
     });
   }, [playerstatus]);
 

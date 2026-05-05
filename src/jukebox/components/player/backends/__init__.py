@@ -1,11 +1,26 @@
 from abc import ABC, abstractmethod
+import functools
+
+
+def auto_update_status(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        result = func(self, *args, **kwargs)
+        if hasattr(self, 'update_status'):
+            self.update_status()
+        return result
+    return wrapper
 
 
 class BackendPlayer(ABC):
     """
     Abstract Class to inherit, so that you can build a proper new Player
     """
-    
+
+    @abstractmethod
+    def status(self):
+        pass
+
     @abstractmethod
     def next(self):
         pass
@@ -16,6 +31,10 @@ class BackendPlayer(ABC):
 
     @abstractmethod
     def play(self):
+        pass
+
+    @abstractmethod
+    def play_uri(self, uri: str, **kwargs):
         pass
 
     @abstractmethod
@@ -41,7 +60,7 @@ class BackendPlayer(ABC):
         pass
 
     @abstractmethod
-    def shuffle(self):
+    def shuffle(self, option: str = 'toggle'):
         pass
 
     @abstractmethod
@@ -57,11 +76,11 @@ class BackendPlayer(ABC):
         pass
 
     @abstractmethod
-    def repeat(self):
+    def repeat(self, option: str = 'toggle'):
         pass
 
     @abstractmethod
-    def seek(self):
+    def seek(self, new_time):
         pass
 
     @abstractmethod

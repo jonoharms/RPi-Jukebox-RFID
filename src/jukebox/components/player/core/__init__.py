@@ -39,9 +39,9 @@ class PlayerCtrl:
 
     def _status_poll(self):
         ret_status = self._active.status()
-        if ret_status.get('state') == 'play':
-            self.player_status.update(playing=True, elapsed=ret_status.get('elapsed', '0.0'),
-                                      duration=ret_status.get('duration', '0.0'))
+        if ret_status.get('playing'):
+            self.player_status.update(elapsed=ret_status.get('elapsed', 0),
+                                      duration=ret_status.get('duration', 0))
 
     def register(self, name: str, backend):
         self._backends[name] = backend
@@ -121,30 +121,22 @@ class PlayerCtrl:
     @plugin.tag
     def play(self):
         self._active.play()
-        self.player_status.update(playing=True)
 
     @plugin.tag
     def play_single(self, uri):
         self.play_uri(uri)
-        self.player_status.update(playing=True)
 
     @plugin.tag
     def play_album(self, albumartist, album):
         self._active.play_album(albumartist, album)
-        self.player_status.update(playing=True)
 
     @plugin.tag
     def play_folder(self, folder, recursive):
         self._active.play_folder(folder, recursive)
-        self.player_status.update(playing=True)
 
     @plugin.tag
     def toggle(self):
         self._active.toggle()
-        if self.player_status.get_value('playing') is False:
-            self.player_status.update(playing=True)
-        else:
-            self.player_status.update(playing=False)
 
     @plugin.tag
     def shuffle(self, option='toggle'):
@@ -156,14 +148,12 @@ class PlayerCtrl:
     @plugin.tag
     def pause(self):
         self._active.pause()
-        self.player_status.update(playing=False)
 
     @plugin.tag
     def stop(self):
         # Save current state for resume functionality
         self._save_state()
         self._active.stop()
-        self.player_status.update(playing=False)
 
     @plugin.tag
     def get_queue(self):
@@ -174,8 +164,8 @@ class PlayerCtrl:
         self._active.repeat()
 
     @plugin.tag
-    def seek(self):
-        self._active.seek()
+    def seek(self, new_time):
+        self._active.seek(new_time)
 
     @plugin.tag
     def get_single_coverart(self, song_url):

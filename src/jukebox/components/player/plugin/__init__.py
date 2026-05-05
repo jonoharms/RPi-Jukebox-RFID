@@ -46,8 +46,9 @@ def register_mpd():
     global event_loop
     global backend_mpd
     global player_arbiter
+    global player_status
 
-    backend_mpd = MPDBackend(event_loop)
+    backend_mpd = MPDBackend(event_loop, player_status)
     # Register with plugin interface to call directly
     plugin.register(backend_mpd, package='player', name='mpd')
     player_arbiter.register('mpd', backend_mpd)

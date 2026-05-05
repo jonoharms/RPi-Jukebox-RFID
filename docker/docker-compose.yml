@@ -43,6 +43,7 @@ services:
       - ../src/jukebox:/root/RPi-Jukebox-RFID/src/jukebox
       - ../src/webapp/public/cover-cache:/root/RPi-Jukebox-RFID/src/webapp/build/cover-cache
       - ../shared:/root/RPi-Jukebox-RFID/shared
+      - ${AUDIO_FOLDERS_PATH:-../shared/audiofolders}:/root/RPi-Jukebox-RFID/shared/audiofolders
       - ./config/docker.mpd.conf:/root/.config/mpd/mpd.conf
     command: python run_jukebox.py
 

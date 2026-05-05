@@ -19,6 +19,7 @@ class PlayerStatus:
         'playing': False,
         'shuffle': False,
         'repeat': 0,
+        'single': False,
         'title': '',
         'trackid': '',
     }
@@ -39,7 +40,7 @@ class PlayerStatus:
     def publish(self):
         logger.debug(f'Published: {self._player_status}')
         return publishing.get_publisher().send(
-            'player_status',
+            'playerstatus',
             self._player_status
         )
 

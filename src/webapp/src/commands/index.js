@@ -49,7 +49,7 @@ const commands = {
   },
   playerstatus: {
     _package: 'player',
-    plugin: 'player_status',
+    plugin: 'playerstatus',
     method: 'status'
   },
 
@@ -114,6 +114,7 @@ const commands = {
     _package: 'player',
     plugin: 'ctrl',
     method: 'seek',
+    argKeys: ['new_time'],
   },
 
   // Volume
