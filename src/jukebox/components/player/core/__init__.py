@@ -32,7 +32,7 @@ class PlayerCtrl:
         self._backends: Dict[str, Any] = {}
         self._active = None
         self.player_status = None
-        self.status_poll_interval = 0.25
+        self.status_poll_interval = 1.0
         self.status_thread = multitimer.GenericEndlessTimerClass('player.timer_status',
                                                                  self.status_poll_interval, self._status_poll)
         self.status_thread.start()

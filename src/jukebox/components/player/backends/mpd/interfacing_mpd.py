@@ -11,6 +11,7 @@ from typing import Optional
 import jukebox.plugs as plugin
 import jukebox.cfghandler
 import jukebox.playlistgenerator as playlistgenerator
+import mpd
 
 from mpd.asyncio import MPDClient
 from components.player.backends import BackendPlayer, auto_update_status
@@ -35,6 +36,7 @@ class MPDBackend(BackendPlayer):
 
     def __init__(self, event_loop, player_status):
         self.client = MPDClient()
+        self.status_client = MPDClient()
         self.loop = event_loop
         self.player_status = player_status
         self.host = cfg.setndefault('playermpd', 'host', value='localhost')
@@ -64,43 +66,71 @@ class MPDBackend(BackendPlayer):
     # pass method and arguments to these two wrapper functions that do the scheduling and waiting
 
     async def _run_cmd_async(self, afunc, *args, **kwargs):
-        return await afunc(*args, **kwargs)
+        try:
+            return await afunc(*args, **kwargs)
+        except (mpd.base.ConnectionError, BrokenPipeError, ConnectionResetError, OSError):
+            logger.info(f"MPD connection lost during {afunc.__name__}. Attempting to reconnect...")
+            try:
+                await self._connect_client(self.client)
+            except Exception:
+                pass
+            return await afunc(*args, **kwargs)
 
     def _run_cmd(self, afunc, *args, **kwargs):
         logger.debug(f"executing command {afunc.__name__} with params {args} {kwargs}")
         return asyncio.run_coroutine_threadsafe(self._run_cmd_async(afunc, *args, **kwargs), self.loop).result()
 
-    # -----------------------------------------------------
+    # -------------------------------------
     # Check and update statues
 
+    async def _connect_client(self, client):
+        try:
+            # If already connected, disconnect first to be sure
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+            await client.connect(self.host, self.port)
+        except Exception as e:
+            logger.error(f"Failed to connect to MPD ({self.host}:{self.port}): {e}")
+            raise
+
     async def _connect(self):
-        return await self.client.connect(self.host, self.port)
+        await self._connect_client(self.client)
+        await self._connect_client(self.status_client)
 
     def connect(self):
         """
         Connect to the MPD backend
         :raises: mpd.base.ConnectionError
         """
-        result = asyncio.run_coroutine_threadsafe(self._connect(), self.loop).result()
-        logger.debug(f"Connected to MPD version {self.client.mpd_version} @ {self.host}:{self.port}")
-        return result
+        try:
+            asyncio.run_coroutine_threadsafe(self._connect(), self.loop).result()
+            logger.info(f"Connected to MPD version {self.client.mpd_version} @ {self.host}:{self.port}")
+        except Exception as e:
+            logger.error(f"Could not connect to MPD: {e}")
 
     # -----------------------------------------------------
     # Check and update statues
 
     async def _status_listener(self):
         """The endless status listener: updates the status whenever there is a change in one MPD subsystem"""
-        # Calls to logger do not work
-        # logger.debug("MPD Status Listener started")
-        async for subsystem in self.client.idle():
-            # logger.debug("MPD: Idle change in", subsystem)
-            s = await self.client.status()
-            c = await self.client.currentsong()
-            # logger.debug(f"MPD: New Status: {s.result()}")
-            # print(f"MPD: New Status: {type(s)} // {s}")
-            # Now, do something with it ...
-            # publishing.get_publisher().send('playerstatus', s)
-            self._update_player_status(s, c)
+        while True:
+            try:
+                async for subsystem in self.status_client.idle():
+                    s = await self.status_client.status()
+                    c = await self.status_client.currentsong()
+                    self._update_player_status(s, c)
+            except (mpd.base.ConnectionError, BrokenPipeError, ConnectionResetError, OSError):
+                logger.info("Status listener connection lost. Attempting to reconnect...")
+                await asyncio.sleep(2)
+                try:
+                    await self._connect_client(self.status_client)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error(f"Unexpected error in status listener: {e}")
+                await asyncio.sleep(5)
 
     async def _status(self):
         return await self.client.status()
@@ -110,9 +140,12 @@ class MPDBackend(BackendPlayer):
 
     def update_status(self):
         """Trigger a status update and refresh the PlayerStatus"""
-        s = asyncio.run_coroutine_threadsafe(self._status(), self.loop).result()
-        c = asyncio.run_coroutine_threadsafe(self._currentsong(), self.loop).result()
-        self._update_player_status(s, c)
+        try:
+            s = asyncio.run_coroutine_threadsafe(self._status(), self.loop).result()
+            c = asyncio.run_coroutine_threadsafe(self._currentsong(), self.loop).result()
+            self._update_player_status(s, c)
+        except Exception as e:
+            logger.debug(f"Could not update status: {e}")
 
     def _update_player_status(self, mpd_status, mpd_currentsong):
         # Map MPD status to PlayerStatus
@@ -177,11 +210,13 @@ class MPDBackend(BackendPlayer):
         """
         self.play_uri(f"mpd:folder:{folder}", recursive=recursive)
 
+    @auto_update_status
     def play_single(self, uri):
-        pass
+        self.play_uri(f"mpd:file:{uri}")
 
+    @auto_update_status
     def play_album(self, albumartist, album):
-        pass
+        self.play_uri(f"mpd:album:{album}:albumartist:{albumartist}")
 
     @auto_update_status
     def toggle(self):
