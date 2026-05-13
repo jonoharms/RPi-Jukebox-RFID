@@ -156,7 +156,7 @@ class PlexampBackend(BackendPlayer):
         if not self._check_connection():
             return
         try:
-            results = self.server.search(album, libtype='album')
+            results = self.server.search(album, mediatype='album')
             for a in results:
                 if a.artist().title.lower() == albumartist.lower():
                     self.client.playMedia(a)
