@@ -1,7 +1,9 @@
 import logging
 import asyncio
 from typing import Optional
+from urllib import parse
 from plexapi.server import PlexServer
+from plexapi.client import PlexClient
 from plexapi.exceptions import NotFound
 
 import jukebox.cfghandler
@@ -20,7 +22,9 @@ class PlexampBackend(BackendPlayer):
         # Load configuration
         self.server_url = cfg.setndefault('plexamp', 'server_url', value='http://localhost:32400')
         self.token = cfg.setndefault('plexamp', 'token', value='')
+        self.client_url = cfg.setndefault('plexamp', 'client_url', value='http://localhost:32500')
         self.client_name = cfg.setndefault('plexamp', 'client_name', value='phoniebox')
+        
         
         self.server = None
         self.client = None
@@ -31,8 +35,8 @@ class PlexampBackend(BackendPlayer):
 
     def connect(self):
         try:
-            self.server = PlexServer(self.server_url, self.token)
-            self.client = self.server.client(self.client_name)
+            self.server = PlexServer(self.server_url, token=self.token)
+            self.client = PlexClient(server=self.server, baseurl=self.client_url, token=self.token)
             self._connected = True
             logger.info(f"Connected to Plex Server and client '{self.client_name}'")
         except Exception as e:
@@ -53,16 +57,19 @@ class PlexampBackend(BackendPlayer):
             timeline = self.client.timeline
             if not timeline:
                 return
-
+            item = self.server.fetchItem(timeline.key)
             status_map = {
                 'playing': timeline.state == 'playing',
                 'duration': float(timeline.duration or 0) / 1000.0,
                 'elapsed': float(timeline.time or 0) / 1000.0,
-                'title': timeline.title or '',
-                'artist': timeline.grandparentTitle or '',  # Album Artist usually
-                'album': timeline.parentTitle or '',
+                'title': item.title or '',
+                'albumartist': item.grandparentTitle or '',
+                'artist': item.grandparentTitle or '',
+                'album': item.parentTitle or '',
                 'trackid': str(timeline.ratingKey or ''),
-                'player': 'plexamp'
+                'player': 'plexamp', 
+                'file': item.locations or '',
+                'coverArt': item.posterUrl or '',
             }
             self.player_status.update(**status_map)
         except Exception as e:
@@ -101,7 +108,10 @@ class PlexampBackend(BackendPlayer):
     @auto_update_status
     def toggle(self):
         if self._check_connection():
-            self.client.playPause()
+            if self.status()["playing"]:
+                self.client.pause()
+            else:
+                self.client.play()
 
     @auto_update_status
     def play_uri(self, uri: str, **kwargs):
@@ -114,25 +124,19 @@ class PlexampBackend(BackendPlayer):
             return
 
         url = uri.replace("plexamp:url:", "")
+        
         try:
-            # Simple URL parsing to find the item
-            # Example: https://listen.plex.tv/album/5d9c66fc000c82003f905206
-            # We can use server.fetchItem if we have the ratingKey or search
             logger.info(f"Parsing Plexamp URL: {url}")
-            
-            # For now, let's try a generic search or fetch if it's a numeric ID
-            # In a production version, we'd want more robust URL-to-item resolution
-            parts = url.split('/')
-            item_id = parts[-1]
-            
-            item = None
-            try:
-                # Try to fetch by ratingKey if it's numeric
-                item = self.server.fetchItem(int(item_id))
-            except (ValueError, NotFound):
-                # Fallback to GUID search or other methods
-                logger.warning(f"Could not fetch item by ID {item_id}, advanced URL resolution needed.")
-            
+            parsed_url = parse.urlsplit(parse.unquote(url))
+
+            query_dict = parse.parse_qs(parsed_url.query)
+            nested_link = query_dict["uri"][0]
+            parsed = parse.urlsplit(nested_link)
+            server_uuid = parsed.netloc
+            metadata_key = parsed.path.replace("/com.plexapp.plugins.library", "") 
+
+            logger.info(f"Parsed metadata path: {metadata_key}")
+            item = self.server.fetchItem(metadata_key)
             if item:
                 self.client.playMedia(item)
                 logger.info(f"Started playback of {item.title}")
@@ -202,3 +206,16 @@ class PlexampBackend(BackendPlayer):
 
     def get_folder_content(self, folder):
         return []
+
+    # -----------------------------------------------------
+    # Queue / URI state  (save + restore e.g. random, resume, ...)
+
+    def save_state(self):
+        """Save the configuration and state of the current URI playback to the URIs state file"""
+        pass
+
+    def _restore_state(self):
+        """
+        Restore the configuration state and last played status for current active URI
+        """
+        pass
