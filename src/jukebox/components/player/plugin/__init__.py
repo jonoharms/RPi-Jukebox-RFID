@@ -9,6 +9,7 @@ from typing import Optional
 import jukebox.plugs as plugin
 import jukebox.cfghandler
 from components.player.backends.mpd.interfacing_mpd import MPDBackend
+from components.player.backends.plexamp.interfacing_plexamp import PlexampBackend
 from components.player.core import PlayerCtrl
 from components.player.core.player_status import PlayerStatus
 
@@ -30,6 +31,7 @@ player_status: PlayerStatus
 
 # The various backends
 backend_mpd: Optional[MPDBackend] = None
+backend_plexamp: Optional[PlexampBackend] = None
 
 
 def start_event_loop(loop: asyncio.AbstractEventLoop):
@@ -52,6 +54,18 @@ def register_mpd():
     # Register with plugin interface to call directly
     plugin.register(backend_mpd, package='player', name='mpd')
     player_arbiter.register('mpd', backend_mpd)
+
+
+def register_plexamp():
+    global event_loop
+    global backend_plexamp
+    global player_arbiter
+    global player_status
+
+    backend_plexamp = PlexampBackend(event_loop, player_status)
+    # Register with plugin interface to call directly
+    plugin.register(backend_plexamp, package='player', name='plexamp')
+    player_arbiter.register('plexamp', backend_plexamp)
 
 
 @plugin.initialize
@@ -77,6 +91,7 @@ def initialize():
 
     # Create and register the players (this is explicit for the moment)
     register_mpd()
+    register_plexamp()
 
     plugin.register(player_arbiter, package='player', name='ctrl')
     plugin.register(player_status, package='player', name='playerstatus')

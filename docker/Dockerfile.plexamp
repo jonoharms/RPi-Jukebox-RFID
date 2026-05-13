@@ -1,0 +1,21 @@
+FROM node:20-slim
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    bzip2 \
+    ca-certificates \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Download and extract Plexamp Headless
+RUN wget https://plexamp.plex.tv/headless/Plexamp-Linux-headless-v4.10.1.tar.bz2 \
+    && tar -xvf Plexamp-Linux-headless-v4.10.1.tar.bz2 \
+    && rm Plexamp-Linux-headless-v4.10.1.tar.bz2
+
+EXPOSE 32500
+
+# Start Plexamp
+CMD ["node", "plexamp/js/index.js"]

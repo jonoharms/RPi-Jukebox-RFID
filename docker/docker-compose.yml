@@ -15,7 +15,7 @@ services:
       - PULSE_SERVER=tcp:host.docker.internal:4713
     restart: unless-stopped
     volumes:
-      - ../shared/audiofolders:/root/RPi-Jukebox-RFID/shared/audiofolders
+      - ${AUDIO_FOLDERS_PATH:-../shared/audiofolders}:/root/RPi-Jukebox-RFID/shared/audiofolders
       - ../shared/playlists:/root/.config/mpd/playlists
       - ./config/docker.mpd.conf:/root/.config/mpd/mpd.conf
 
@@ -31,8 +31,12 @@ services:
     image: phoniebox/jukebox
     depends_on:
       - mpd
+      - plexamp
     environment:
       - PULSE_SERVER=tcp:host.docker.internal:4713
+      - PLEX_SERVER_URL=${PLEX_SERVER_URL:-}
+      - PLEX_TOKEN=${PLEX_TOKEN:-}
+      - PLEX_CLIENT_NAME=${PLEX_CLIENT_NAME:-Plexamp}
     ports:
       - 5555:5555
       - 5556:5556
@@ -52,7 +56,6 @@ services:
       context: ../
       dockerfile: ./docker/Dockerfile.webapp
     container_name: webapp
-    image: phoniebox/webapp
     depends_on:
       - jukebox
     environment:
@@ -63,3 +66,16 @@ services:
     volumes:
       - ../src/webapp:/home/node/webapp
       - /home/node/webapp/node_modules
+
+  plexamp:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile.plexamp
+    container_name: plexamp
+    environment:
+      - PLEXAMP_CLAIM_TOKEN=${PLEXAMP_CLAIM_TOKEN:-}
+    restart: unless-stopped
+    volumes:
+      - ./config/plexamp:/root/.config/Plexamp
+    ports:
+      - 32500:32500
