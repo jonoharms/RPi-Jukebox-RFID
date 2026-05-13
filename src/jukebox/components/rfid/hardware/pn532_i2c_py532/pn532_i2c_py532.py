@@ -1,5 +1,7 @@
 import logging
 
+import ndef
+
 from py532lib.mifare import Mifare
 from py532lib.mifare import (MIFARE_WAIT_FOR_ENTRY, MIFARE_SAFE_RETRIES)  # noqa: F401
 
@@ -41,21 +43,57 @@ class ReaderClass(ReaderBaseClass):
     def stop(self):
         self._keep_running = False
 
-    def read_card(self) -> str:
+    def read_card(self) -> dict:
         # scan_field returns a byte array -> convert to true integer
         # if no card is present comes back with False
         byte_uid = self.device.scan_field()
         if byte_uid is False:
-            return ''
+            return {}
         if not self._keep_running:
-            return ''
+            return {}
         try:
             card_uid = str(int(byte_uid.hex(), base=16))
         except ValueError:
             self._logger.debug(f"Error while reading card. Raw card ID = {byte_uid}")
-            return ''
+            return {}
 
         if self.log_all_cards is True:
             self._logger.debug(f"Card detected with ID = {card_uid}")
 
-        return card_uid
+        # Try to read NDEF data
+        card_data = None
+        try:
+            # We try to read several blocks. For NTAG/Ultralight, data starts at page 4.
+            # mifare_read(page) reads 16 bytes.
+            # Page 4 contains NDEF TLV start (usually)
+            raw_bytes = b''
+            # Read first 64 bytes of user data (pages 4 to 19)
+            for page in range(4, 20, 4):
+                chunk = self.device.mifare_read(page)
+                if chunk:
+                    raw_bytes += chunk
+                else:
+                    break
+
+            if raw_bytes:
+                # Look for NDEF Message TLV (0x03)
+                ndef_start = raw_bytes.find(b'\x03')
+                if ndef_start != -1:
+                    ndef_len = raw_bytes[ndef_start + 1]
+                    # Handle 3-byte length field (0xFF followed by 2 bytes)
+                    if ndef_len == 0xFF:
+                        ndef_len = (raw_bytes[ndef_start + 2] << 8) + raw_bytes[ndef_start + 3]
+                        ndef_payload = raw_bytes[ndef_start + 4: ndef_start + 4 + ndef_len]
+                    else:
+                        ndef_payload = raw_bytes[ndef_start + 2: ndef_start + 2 + ndef_len]
+
+                    if ndef_payload:
+                        decoder = ndef.message_decoder(ndef_payload)
+                        for record in decoder:
+                            if isinstance(record, ndef.uri.UriRecord):
+                                card_data = record.uri
+                                break
+        except Exception as e:
+            self._logger.debug(f"Error reading card data for {card_uid}: {e}")
+
+        return {'id': card_uid, 'data': card_data}
