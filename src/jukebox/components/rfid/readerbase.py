@@ -34,6 +34,11 @@ class ReaderBaseClass(ABC):
 
     @abstractmethod
     def read_card(self):
+        """
+        Wait for a card and return its ID and optional data.
+
+        :return: Card ID as string OR a dict {'id': ID, 'data': data}
+        """
         pass
 
     @abstractmethod

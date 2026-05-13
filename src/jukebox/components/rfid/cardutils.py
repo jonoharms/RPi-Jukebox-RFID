@@ -44,3 +44,26 @@ def card_to_str(card_id: str, long=False) -> List[str]:
     if card_id in cfg_cards:
         readable = card_command_to_str(cfg_cards.getn(card_id, default=None), long)
     return readable
+
+
+def decode_unknown_card(card_id: str, card_data: str = None, logger: logging.Logger = log):
+    """
+    Decides what to do with a card that is not in the database.
+    If card_data is provided (e.g. from NDEF), it tries to interpret it.
+    """
+    if card_data:
+        logger.info(f"Attempting to decode data from unknown card {card_id}: {card_data}")
+        # Pattern 1: Plex URLs
+        if 'listen.plex.tv' in card_data:
+            logger.info(f"Recognized Plex URL on card: {card_data}")
+            return {
+                'package': 'player',
+                'plugin': 'ctrl',
+                'method': 'play_uri',
+                'args': [f"plexamp:url:{card_data}"],
+                'kwargs': {},
+                'ignore_same_id_delay': False
+            }
+        # Add more patterns here as needed (e.g. spotify, local paths, etc.)
+
+    return None

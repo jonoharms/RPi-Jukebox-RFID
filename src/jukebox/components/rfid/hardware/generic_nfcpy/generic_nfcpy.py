@@ -100,9 +100,9 @@ class ReaderClass(ReaderBaseClass):
         """
         self._keep_running = False
 
-    def read_card(self) -> str:
+    def read_card(self) -> dict:
         """
-        Blocking or non-blocking function that waits for a new card to appear and return the card's UID as string
+        Blocking or non-blocking function that waits for a new card to appear and return the card's UID and data
         """
         self._logger.debug("Wait for card")
         while self._keep_running:
@@ -122,7 +122,14 @@ class ReaderClass(ReaderBaseClass):
             for char in tag.identifier:
                 id += '%02X' % char
 
-            self._logger.debug(f'Found card with ID: "{id}"')
-            return id
+            data = None
+            if tag.ndef:
+                for record in tag.ndef.records:
+                    if record.type == 'uri':
+                        data = record.uri
+                        break
+
+            self._logger.debug(f'Found card with ID: "{id}" and data: "{data}"')
+            return {'id': id, 'data': data}
         self._logger.debug("NFC read stopped")
-        return ''
+        return {}

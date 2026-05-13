@@ -9,7 +9,7 @@ import jukebox.plugs as plugs
 import jukebox.cfghandler
 import jukebox.utils as utils
 import jukebox.publishing as publishing
-from components.rfid.cardutils import (decode_card_command)
+from components.rfid.cardutils import (decode_card_command, decode_unknown_card)
 
 from jukebox.callingback import CallbackHandler
 
@@ -157,10 +157,17 @@ class ReaderRunner(threading.Thread):
 
         with self._reader as reader:
             # Raises a StopIteration (if blocking) or simply returns '' (if non-blocking)
-            for card_id in reader:
+            for card_res in reader:
                 if self._cancel.is_set():
                     break
-                if card_id:
+                if card_res:
+                    if isinstance(card_res, dict):
+                        card_id = card_res.get('id')
+                        card_data = card_res.get('data')
+                    else:
+                        card_id = card_res
+                        card_data = None
+
                     # (1) Re-Trigger the timer, to detect card removal
                     # But: don't trigger the timer just yet if it is a new card id
                     # First, need to figure out if this card really has is a removal-action card
@@ -220,9 +227,17 @@ class ReaderRunner(threading.Thread):
                                                          args=card_action['args'], kwargs=card_action['kwargs'])
 
                         else:
-                            rfid_card_detect_callbacks.run_callbacks(card_id, RfidCardDetectState.isUnkown)
-                            self._logger.info(f"Unknown card: '{card_id}'")
-                            self.publisher.send(self.topic, card_id)
+                            # Try to decode card data for unknown cards
+                            card_action = decode_unknown_card(card_id, card_data, self._logger)
+                            if card_action is not None:
+                                self._logger.info(f"Triggering action from unknown card data: {card_id}")
+                                self.publisher.send(self.topic, card_id)
+                                plugs.call_ignore_errors(card_action['package'], card_action['plugin'], card_action['method'],
+                                                         args=card_action['args'], kwargs=card_action['kwargs'])
+                            else:
+                                rfid_card_detect_callbacks.run_callbacks(card_id, RfidCardDetectState.isUnkown)
+                                self._logger.info(f"Unknown card: '{card_id}'")
+                                self.publisher.send(self.topic, card_id)
                     elif self._cfg_log_ignored_cards is True:
                         self._logger.debug(f"'Ignoring card id {card_id} due to same-card-delay ({self._cfg_same_id_delay}s)")
                     previous_time = time.time()
