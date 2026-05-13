@@ -103,17 +103,33 @@ class ReaderClass(ReaderBaseClass):
                 else:
                     raw_bytes = b''
             else:
-                # NTAG / Ultralight
+                # NTAG / Ultralight (e.g. NTAG215)
                 raw_bytes = b''
-                # Read first 32 bytes (pages 4 to 11)
-                # We only read 2 chunks to minimize timeout risks if card is moving
-                for page in range(4, 12, 4):
+                # Read up to 496 bytes of user data (pages 4 to 127)
+                # mifare_read(page) reads 16 bytes (4 pages) at a time
+                for page in range(4, 128, 4):
                     try:
                         chunk = self.device.mifare_read(page)
                         if chunk:
                             raw_bytes += chunk
                         else:
                             break
+                        
+                        # Optimization: Check if we have the full NDEF message yet
+                        # to avoid unnecessary reads and potential timeouts
+                        if len(raw_bytes) > 2:
+                            ndef_start = raw_bytes.find(b'\x03')
+                            if ndef_start != -1 and len(raw_bytes) > ndef_start + 1:
+                                ndef_len = raw_bytes[ndef_start + 1]
+                                if ndef_len != 0xFF:
+                                    # 1-byte length field
+                                    if len(raw_bytes) >= ndef_start + 2 + ndef_len:
+                                        break
+                                elif len(raw_bytes) > ndef_start + 3:
+                                    # 3-byte length field (0xFF followed by 2 bytes)
+                                    full_len = (raw_bytes[ndef_start + 2] << 8) + raw_bytes[ndef_start + 3]
+                                    if len(raw_bytes) >= ndef_start + 4 + full_len:
+                                        break
                     except Exception as e:
                         if "0x1" in str(e):
                             self._logger.debug(f"Timeout reading page {page}, card might have moved.")
