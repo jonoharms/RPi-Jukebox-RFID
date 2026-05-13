@@ -44,13 +44,22 @@ class ReaderClass(ReaderBaseClass):
         self._keep_running = False
 
     def read_card(self) -> dict:
-        # scan_field returns a byte array -> convert to true integer
-        # if no card is present comes back with False
-        byte_uid = self.device.scan_field()
+        # We use the underlying PN532 object to get more info (like SAK)
+        # scan_field in Mifare class is a bit limited.
+        # However, to keep compatibility with the existing setup, we first try to get UID.
+        
+        try:
+            # MIFARE_SAFE_RETRIES is used here
+            byte_uid = self.device.scan_field()
+        except Exception as e:
+            self._logger.debug(f"Scan field error: {e}")
+            return {}
+
         if byte_uid is False:
             return {}
         if not self._keep_running:
             return {}
+
         try:
             card_uid = str(int(byte_uid.hex(), base=16))
         except ValueError:
@@ -63,37 +72,76 @@ class ReaderClass(ReaderBaseClass):
         # Try to read NDEF data
         card_data = None
         try:
-            # We try to read several blocks. For NTAG/Ultralight, data starts at page 4.
-            # mifare_read(page) reads 16 bytes.
-            # Page 4 contains NDEF TLV start (usually)
-            raw_bytes = b''
-            # Read first 64 bytes of user data (pages 4 to 19)
-            for page in range(4, 20, 4):
-                chunk = self.device.mifare_read(page)
-                if chunk:
-                    raw_bytes += chunk
+            # Give the tag a moment to breathe
+            # time.sleep(0.01)
+            
+            # Check card type if possible. 
+            # Standard Mifare Classic has 4 byte UID. 
+            # NTAG/Ultralight has 7 byte UID.
+            is_classic = (len(byte_uid) == 4)
+            
+            if is_classic:
+                # Mifare Classic needs authentication.
+                # Try factory default key first, then NDEF key.
+                # Sector 0, Block 1 is a good place to look for NDEF TLV if it's there.
+                # But usually NDEF starts in Sector 1 for Classic.
+                keys = [b'\xff\xff\xff\xff\xff\xff', b'\xd3\xf7\xd3\xf7\xd3\xf7']
+                authenticated = False
+                for key in keys:
+                    try:
+                        # Authenticate Sector 1 (Block 4) for NDEF
+                        self.device.mifare_auth_a(self.device.mifare_address(1, 0), key)
+                        authenticated = True
+                        break
+                    except Exception:
+                        continue
+                
+                if authenticated:
+                    # Read Sector 1, Blocks 4, 5, 6
+                    raw_bytes = self.device.mifare_read(self.device.mifare_address(1, 0))
+                    raw_bytes += self.device.mifare_read(self.device.mifare_address(1, 1))
                 else:
-                    break
+                    raw_bytes = b''
+            else:
+                # NTAG / Ultralight
+                raw_bytes = b''
+                # Read first 32 bytes (pages 4 to 11)
+                # We only read 2 chunks to minimize timeout risks if card is moving
+                for page in range(4, 12, 4):
+                    try:
+                        chunk = self.device.mifare_read(page)
+                        if chunk:
+                            raw_bytes += chunk
+                        else:
+                            break
+                    except Exception as e:
+                        if "0x1" in str(e):
+                            self._logger.debug(f"Timeout reading page {page}, card might have moved.")
+                        else:
+                            self._logger.debug(f"Error reading page {page}: {e}")
+                        break
 
             if raw_bytes:
                 # Look for NDEF Message TLV (0x03)
                 ndef_start = raw_bytes.find(b'\x03')
-                if ndef_start != -1:
+                if ndef_start != -1 and len(raw_bytes) > ndef_start + 1:
                     ndef_len = raw_bytes[ndef_start + 1]
                     # Handle 3-byte length field (0xFF followed by 2 bytes)
-                    if ndef_len == 0xFF:
+                    payload_start = ndef_start + 2
+                    if ndef_len == 0xFF and len(raw_bytes) > ndef_start + 3:
                         ndef_len = (raw_bytes[ndef_start + 2] << 8) + raw_bytes[ndef_start + 3]
-                        ndef_payload = raw_bytes[ndef_start + 4: ndef_start + 4 + ndef_len]
-                    else:
-                        ndef_payload = raw_bytes[ndef_start + 2: ndef_start + 2 + ndef_len]
-
-                    if ndef_payload:
+                        payload_start = ndef_start + 4
+                    
+                    if len(raw_bytes) >= payload_start + ndef_len:
+                        ndef_payload = raw_bytes[payload_start : payload_start + ndef_len]
                         decoder = ndef.message_decoder(ndef_payload)
                         for record in decoder:
                             if isinstance(record, ndef.uri.UriRecord):
                                 card_data = record.uri
                                 break
         except Exception as e:
-            self._logger.debug(f"Error reading card data for {card_uid}: {e}")
+            # We don't want to crash the whole reader thread just because data read failed
+            # If we have the UID, that's already something.
+            self._logger.debug(f"Data read skipped for {card_uid}: {e}")
 
         return {'id': card_uid, 'data': card_data}
