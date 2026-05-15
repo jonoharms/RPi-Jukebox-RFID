@@ -2,6 +2,16 @@
 # Always use relative path from settingsfile `../../`, but do not use relative paths with `~/`.
 # Sole (!) exception is in playermpd.mpd_conf
 players:
+  enabled:
+    - mpd
+    - plexamp
+  backends:
+    mpd:
+      module: components.player.backends.mpd.interfacing_mpd
+      class: MPDBackend
+    plexamp:
+      module: components.player.backends.plexamp.interfacing_plexamp
+      class: PlexampBackend
   content:
     audiofile: /../../shared/audiofolders/audiofiles.yaml
 playermpd:

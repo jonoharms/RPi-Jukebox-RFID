@@ -64,6 +64,14 @@ class PlayerCtrl:
         logger.debug(f"Backend list: {self._backends.items()}")
         return [b for b in self._backends.keys()]
 
+    def decode_card(self, card_id: str, card_data: str):
+        for name, backend in self._backends.items():
+            res = backend.decode_card(card_id, card_data)
+            if res:
+                logger.info(f"Backend '{name}' decoded unknown card {card_id}")
+                return res
+        return None
+
     @plugin.tag
     def play_uri(self, uri, check_second_swipe=False, **kwargs):
         # Save the current state and stop the current playback
@@ -123,15 +131,27 @@ class PlayerCtrl:
         self._active.play()
 
     @plugin.tag
-    def play_single(self, uri):
-        self.play_uri(uri)
+    def play_single(self, uri, **kwargs):
+        self.play_uri(uri, **kwargs)
 
     @plugin.tag
-    def play_album(self, albumartist, album):
+    def play_album(self, albumartist, album, **kwargs):
+        backend_name = kwargs.pop('backend', None)
+        if backend_name and backend_name in self._backends:
+            if self._active != self._backends[backend_name]:
+                self.stop()
+                self._active = self._backends[backend_name]
+                self.player_status.update(player=backend_name)
         self._active.play_album(albumartist, album)
 
     @plugin.tag
-    def play_folder(self, folder, recursive):
+    def play_folder(self, folder, recursive, **kwargs):
+        backend_name = kwargs.pop('backend', None)
+        if backend_name and backend_name in self._backends:
+            if self._active != self._backends[backend_name]:
+                self.stop()
+                self._active = self._backends[backend_name]
+                self.player_status.update(player=backend_name)
         self._active.play_folder(folder, recursive)
 
     @plugin.tag

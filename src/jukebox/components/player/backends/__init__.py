@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import functools
+from typing import Optional
 
 
 def auto_update_status(func):
@@ -42,11 +43,11 @@ class BackendPlayer(ABC):
         pass
 
     @abstractmethod
-    def play_album(self, albumartist, album):
+    def play_album(self, albumartist, album, **kwargs):
         pass
 
     @abstractmethod
-    def play_folder(self, folder: str, recursive: bool):
+    def play_folder(self, folder: str, recursive: bool, **kwargs):
         """
         Playback a music folder.
 
@@ -113,3 +114,10 @@ class BackendPlayer(ABC):
         :param folder: Folder path relative to music library path
         """
         pass
+
+    def decode_card(self, card_id: str, card_data: Optional[str]):
+        """
+        Decides what to do with a card that is not in the database.
+        If card_data is provided (e.g. from NDEF), it tries to interpret it.
+        """
+        return None

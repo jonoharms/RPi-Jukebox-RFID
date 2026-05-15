@@ -9,6 +9,7 @@ import logging
 from typing import (List, Mapping)
 import jukebox.utils as utils
 import jukebox.cfghandler
+import jukebox.plugs as plugs
 
 log = logging.getLogger('jb.cardutils')
 cfg_cards = jukebox.cfghandler.get_handler('cards')
@@ -53,17 +54,10 @@ def decode_unknown_card(card_id: str, card_data: str = None, logger: logging.Log
     """
     if card_data:
         logger.info(f"Attempting to decode data from unknown card {card_id}: {card_data}")
-        # Pattern 1: Plex URLs
-        if 'listen.plex.tv' in card_data:
-            logger.info(f"Recognized Plex URL on card: {card_data}")
-            return {
-                'package': 'player',
-                'plugin': 'ctrl',
-                'method': 'play_uri',
-                'args': [f"plexamp:url:{card_data}"],
-                'kwargs': {},
-                'ignore_same_id_delay': False
-            }
-        # Add more patterns here as needed (e.g. spotify, local paths, etc.)
+        try:
+            player_ctrl = plugs.get('player', 'ctrl')
+            return player_ctrl.decode_card(card_id, card_data)
+        except Exception as e:
+            logger.error(f"Error calling player.ctrl.decode_card: {e}")
 
     return None

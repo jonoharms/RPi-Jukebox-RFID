@@ -4,12 +4,11 @@
 import asyncio
 import logging
 import threading
+import importlib
 from typing import Optional
 
 import jukebox.plugs as plugin
 import jukebox.cfghandler
-from components.player.backends.mpd.interfacing_mpd import MPDBackend
-from components.player.backends.plexamp.interfacing_plexamp import PlexampBackend
 from components.player.core import PlayerCtrl
 from components.player.core.player_status import PlayerStatus
 
@@ -30,8 +29,7 @@ player_arbiter: PlayerCtrl
 player_status: PlayerStatus
 
 # The various backends
-backend_mpd: Optional[MPDBackend] = None
-backend_plexamp: Optional[PlexampBackend] = None
+backends = {}
 
 
 def start_event_loop(loop: asyncio.AbstractEventLoop):
@@ -44,28 +42,36 @@ def start_event_loop(loop: asyncio.AbstractEventLoop):
         loop.close()
 
 
-def register_mpd():
+def load_backend(name: str):
     global event_loop
-    global backend_mpd
     global player_arbiter
     global player_status
+    global backends
 
-    backend_mpd = MPDBackend(event_loop, player_status)
-    # Register with plugin interface to call directly
-    plugin.register(backend_mpd, package='player', name='mpd')
-    player_arbiter.register('mpd', backend_mpd)
+    backend_cfg = cfg_player.getn('players', 'backends', name, default=None)
+    if backend_cfg is None:
+        logger.error(f"No configuration found for player backend '{name}'")
+        return
 
+    module_name = backend_cfg.get('module')
+    class_name = backend_cfg.get('class')
 
-def register_plexamp():
-    global event_loop
-    global backend_plexamp
-    global player_arbiter
-    global player_status
+    if not module_name or not class_name:
+        logger.error(f"Backend '{name}' configuration missing 'module' or 'class'")
+        return
 
-    backend_plexamp = PlexampBackend(event_loop, player_status)
-    # Register with plugin interface to call directly
-    plugin.register(backend_plexamp, package='player', name='plexamp')
-    player_arbiter.register('plexamp', backend_plexamp)
+    try:
+        logger.debug(f"Loading player backend '{name}' from {module_name}:{class_name}")
+        module = importlib.import_module(module_name)
+        backend_class = getattr(module, class_name)
+        backend = backend_class(event_loop, player_status)
+        
+        backends[name] = backend
+        # Register with plugin interface to call directly
+        plugin.register(backend, package='player', name=name)
+        player_arbiter.register(name, backend)
+    except Exception as e:
+        logger.error(f"Failed to load player backend '{name}': {e}")
 
 
 @plugin.initialize
@@ -89,9 +95,10 @@ def initialize():
     # ToDo: remove player_content
     # player_content = PlayerData()
 
-    # Create and register the players (this is explicit for the moment)
-    register_mpd()
-    register_plexamp()
+    # Create and register the players (this is dynamic)
+    enabled_players = cfg_player.getn('players', 'enabled', default=['mpd'])
+    for p in enabled_players:
+        load_backend(p)
 
     plugin.register(player_arbiter, package='player', name='ctrl')
     plugin.register(player_status, package='player', name='playerstatus')

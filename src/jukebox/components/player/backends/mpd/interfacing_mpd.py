@@ -201,22 +201,22 @@ class MPDBackend(BackendPlayer):
             return self._run_cmd(self.client.play, idx)
 
     @plugin.tag
-    def play_folder(self, folder: str, recursive: bool = False):
+    def play_folder(self, folder: str, recursive: bool = False, **kwargs):
         """
         Playback a music folder.
 
         :param folder: Folder path relative to music library path
         :param recursive: Add folder recursively
         """
-        self.play_uri(f"mpd:folder:{folder}", recursive=recursive)
+        self.play_uri(f"mpd:folder:{folder}", recursive=recursive, **kwargs)
 
     @auto_update_status
-    def play_single(self, uri):
-        self.play_uri(f"mpd:file:{uri}")
+    def play_single(self, uri, **kwargs):
+        self.play_uri(f"mpd:file:{uri}", **kwargs)
 
     @auto_update_status
-    def play_album(self, albumartist, album):
-        self.play_uri(f"mpd:album:{album}:albumartist:{albumartist}")
+    def play_album(self, albumartist, album, **kwargs):
+        self.play_uri(f"mpd:album:{album}:albumartist:{albumartist}", **kwargs)
 
     @auto_update_status
     def toggle(self):

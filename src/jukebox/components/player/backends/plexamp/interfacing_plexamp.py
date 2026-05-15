@@ -147,11 +147,11 @@ class PlexampBackend(BackendPlayer):
             logger.error(f"Error playing Plexamp URI: {e}")
 
     @auto_update_status
-    def play_single(self, uri):
-        self.play_uri(f"plexamp:url:{uri}")
+    def play_single(self, uri, **kwargs):
+        self.play_uri(f"plexamp:url:{uri}", **kwargs)
 
     @auto_update_status
-    def play_album(self, albumartist, album):
+    def play_album(self, albumartist, album, **kwargs):
         # We can implement a search here
         if not self._check_connection():
             return
@@ -164,7 +164,7 @@ class PlexampBackend(BackendPlayer):
         except Exception as e:
             logger.error(f"Error playing album {album}: {e}")
 
-    def play_folder(self, folder: str, recursive: bool):
+    def play_folder(self, folder: str, recursive: bool, **kwargs):
         pass
 
     def shuffle(self, option: str = 'toggle'):
@@ -219,3 +219,16 @@ class PlexampBackend(BackendPlayer):
         Restore the configuration state and last played status for current active URI
         """
         pass
+
+    def decode_card(self, card_id: str, card_data: Optional[str]):
+        if card_data and 'listen.plex.tv' in card_data:
+            logger.info(f"Recognized Plex URL on card: {card_data}")
+            return {
+                'package': 'player',
+                'plugin': 'ctrl',
+                'method': 'play_uri',
+                'args': [f"plexamp:url:{card_data}"],
+                'kwargs': {},
+                'ignore_same_id_delay': False
+            }
+        return None
