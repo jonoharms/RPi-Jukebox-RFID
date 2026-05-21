@@ -179,7 +179,11 @@ class PlexampBackend(BackendPlayer):
         if not self._check_connection():
             return
         # 0=off, 1=track, 2=all
-        self.client.setParameters(repeat=1) # Simple toggle for now
+        current = self.client.timeline.repeat
+        new = current + 1
+        if new > 2:
+            new = 0
+        self.client.setParameters(repeat=new) # Simple toggle for now
 
     def seek(self, new_time):
         if self._check_connection():
