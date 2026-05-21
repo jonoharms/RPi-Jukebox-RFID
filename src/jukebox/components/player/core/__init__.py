@@ -38,6 +38,8 @@ class PlayerCtrl:
         self.status_thread.start()
 
     def _status_poll(self):
+        if self._active is None:
+            return
         ret_status = self._active.status()
         if ret_status.get('playing'):
             self.player_status.update(elapsed=ret_status.get('elapsed', 0),
