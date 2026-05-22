@@ -134,7 +134,7 @@ class PlexampBackend(BackendPlayer):
             parsed = parse.urlsplit(nested_link)
             server_uuid = parsed.netloc
             metadata_key = parsed.path.replace("/com.plexapp.plugins.library", "") 
-
+            metadata_key = "/".join(metadata_key.split("/")[:-1])
             logger.info(f"Parsed metadata path: {metadata_key}")
             item = self.server.fetchItem(metadata_key)
             if item:
